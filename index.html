@@ -3,41 +3,197 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Unity Web Player | Five Nights At Shreks Hotel 2 (Official)</title>
-    <link rel="shortcut icon" href="TemplateData/favicon.ico">
-    <link rel="stylesheet" href="TemplateData/style.css">
+    <title>Five Nights At Shreks Hotel 2</title>
+    <link rel="shortcut icon" href="./TemplateData/favicon.ico">
+    <link rel="stylesheet" href="./TemplateData/style.css">
+
+    <style>
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #000;
+      }
+      #unity-container {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+      #unity-canvas {
+        width: 100%;
+        height: 100%;
+        background: #000;
+        display: block;
+      }
+      .custom-controls {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        display: flex;
+        gap: 8px;
+        z-index: 10000;
+      }
+      .custom-btn {
+        background: rgba(20, 20, 20, 0.85);
+        color: #e0e0e0;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        font-family: sans-serif;
+        cursor: pointer;
+        backdrop-filter: blur(4px);
+        transition: background 0.2s, color 0.2s;
+      }
+      .custom-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+        color: #fff;
+      }
+      #status-text {
+        color: #aaa;
+        font-family: monospace;
+        font-size: 13px;
+        text-align: center;
+        margin-top: 10px;
+      }
+    </style>
+
+    <script>
+      // 1. Web Audio Auto-Unlock
+      (function () {
+        const audioCtxs = [];
+        const OrigAudioContext = window.AudioContext || window.webkitAudioContext;
+        if (OrigAudioContext) {
+          const PatchedAudioContext = function (opts) {
+            const ctx = new OrigAudioContext(opts);
+            audioCtxs.push(ctx);
+            return ctx;
+          };
+          PatchedAudioContext.prototype = OrigAudioContext.prototype;
+          window.AudioContext = PatchedAudioContext;
+          if (window.webkitAudioContext) window.webkitAudioContext = PatchedAudioContext;
+
+          const resumeAll = () => {
+            audioCtxs.forEach((c) => {
+              if (c && c.state === "suspended") c.resume().catch(() => {});
+            });
+          };
+          window.addEventListener("pointerdown", resumeAll, { passive: true });
+          window.addEventListener("keydown", resumeAll, { passive: true });
+        }
+      })();
+
+      // 2. Pointer Lock Error Guard
+      const origPointerLock = Element.prototype.requestPointerLock || function() {};
+      Element.prototype.requestPointerLock = function() {
+        try {
+          const res = origPointerLock.apply(this, arguments);
+          if (res && typeof res.catch === 'function') res.catch(() => {});
+          return res;
+        } catch (e) {}
+      };
+    </script>
   </head>
   <body>
+    <div class="custom-controls">
+      <button class="custom-btn" id="btn-ab">🌐 About:Blank</button>
+      <button class="custom-btn" id="btn-fs">⛶ Fullscreen</button>
+    </div>
+
     <div id="unity-container" class="unity-desktop">
-      <canvas id="unity-canvas" width=960 height=600 tabindex="-1"></canvas>
+      <canvas id="unity-canvas" tabindex="-1"></canvas>
       <div id="unity-loading-bar">
         <div id="unity-logo"></div>
         <div id="unity-progress-bar-empty">
           <div id="unity-progress-bar-full"></div>
         </div>
+        <div id="status-text">Initializing decompressor...</div>
       </div>
-      <div id="unity-warning"> </div>
+      <div id="unity-warning"></div>
       <div id="unity-footer">
         <div id="unity-logo-title-footer"></div>
         <div id="unity-fullscreen-button"></div>
-        <div id="unity-build-title">Five Nights At Shreks Hotel 2 (Official)</div>
+        <div id="unity-build-title">Five Nights At Shreks Hotel 2</div>
       </div>
     </div>
-    <script>
-      var canvas = document.querySelector("#unity-canvas");
 
-      // Shows a temporary message banner/ribbon for a few seconds, or
-      // a permanent error message on top of the canvas if type=='error'.
-      // If type=='warning', a yellow highlight color is used.
-      // Modify or remove this function to customize the visually presented
-      // way that non-critical warnings and error messages are presented to the
-      // user.
+    <script>
+      const BASE_URL = new URL(".", window.location.href).href.replace(/\/$/, "");
+      const BUILD_URL = BASE_URL + "/Build/";
+
+      const canvas = document.querySelector("#unity-canvas");
+      const loadingBar = document.querySelector("#unity-loading-bar");
+      const progressBarFull = document.querySelector("#unity-progress-bar-full");
+      const statusText = document.querySelector("#status-text");
+      const abBtn = document.querySelector("#btn-ab");
+      const fsBtn = document.querySelector("#btn-fs");
+
+      const isAboutBlank = window.location.href === "about:blank" || window.origin === "null";
+      if (isAboutBlank && abBtn) {
+        abBtn.remove();
+      }
+
+      if (abBtn) {
+        abBtn.addEventListener("click", function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const win = window.open("about:blank", "_blank");
+            if (!win || win.closed) return;
+
+            const clone = document.documentElement.cloneNode(true);
+            const oldAb = clone.querySelector("#btn-ab");
+            if (oldAb) oldAb.remove();
+
+            // Inject <base> so relative ./Build/, ./TemplateData/, and ./StreamingAssets resolve in about:blank
+            const head = clone.querySelector("head");
+            if (head) {
+              const base = document.createElement("base");
+              base.href = BASE_URL + "/";
+              head.insertBefore(base, head.firstChild);
+            }
+
+            win.document.open();
+            win.document.write("<!DOCTYPE html>\n" + clone.outerHTML);
+            win.document.close();
+
+            win.document.title = "Google Docs";
+            const link = win.document.createElement("link");
+            link.rel = "icon";
+            link.href = "https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico";
+            win.document.head.appendChild(link);
+          } catch (err) {
+            console.error("About:blank deployment error:", err);
+          }
+        });
+      }
+
+      if (fsBtn) {
+        fsBtn.addEventListener("click", function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const target = canvas || document.documentElement;
+          if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            const req = target.requestFullscreen || target.webkitRequestFullscreen;
+            if (req) req.call(target).catch(() => {});
+          } else {
+            const exit = document.exitFullscreen || document.webkitExitFullscreen;
+            if (exit) exit.call(document).catch(() => {});
+          }
+        });
+      }
+
       function unityShowBanner(msg, type) {
-        var warningBanner = document.querySelector("#unity-warning");
+        const warningBanner = document.querySelector("#unity-warning");
         function updateBannerVisibility() {
           warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
         }
-        var div = document.createElement('div');
+        const div = document.createElement('div');
         div.innerHTML = msg;
         warningBanner.appendChild(div);
         if (type == 'error') div.style = 'background: red; padding: 10px;';
@@ -51,68 +207,107 @@
         updateBannerVisibility();
       }
 
-      var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/FNASH2.loader.js";
-      var config = {
-        arguments: [],
-        dataUrl: buildUrl + "/FNASH2.data.br",
-        frameworkUrl: buildUrl + "/FNASH2.framework.js.br",
-        codeUrl: buildUrl + "/FNASH2.wasm.br",
-        streamingAssetsUrl: "StreamingAssets",
-        companyName: "RenderPi",
-        productName: "Five Nights At Shreks Hotel 2 (Official)",
-        productVersion: "2.0",
-        showBanner: unityShowBanner,
-      };
-
-      // By default, Unity keeps WebGL canvas render target size matched with
-      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
-      // Set this to false if you want to decouple this synchronization from
-      // happening inside the engine, and you would instead like to size up
-      // the canvas DOM size and WebGL render target sizes yourself.
-      // config.matchWebGLToCanvasSize = false;
-
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        // Mobile device style: fill the whole browser client area with the game canvas:
-
-        var meta = document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
-        document.getElementsByTagName('head')[0].appendChild(meta);
-        document.querySelector("#unity-container").className = "unity-mobile";
-        canvas.className = "unity-mobile";
-
-        // To lower canvas resolution on mobile devices to gain some
-        // performance, uncomment the following line:
-        // config.devicePixelRatio = 1;
-
-
-      } else {
-        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-        canvas.style.width = "960px";
-        canvas.style.height = "600px";
+      async function fetchBuffer(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+        return new Uint8Array(await res.arrayBuffer());
       }
 
-      document.querySelector("#unity-loading-bar").style.display = "block";
+      async function mergeDataParts(prefix, count) {
+        let completed = 0;
+        const tasks = Array.from({ length: count }, (_, idx) => {
+          const i = idx + 1;
+          const url = `${prefix}.part${i}`;
+          return fetchBuffer(url).then((u8) => {
+            completed++;
+            statusText.textContent = `Downloading data chunks (${completed}/${count})...`;
+            progressBarFull.style.width = Math.min(45, Math.round((completed / count) * 45)) + "%";
+            return u8;
+          });
+        });
 
-      var script = document.createElement("script");
-      script.src = loaderUrl;
-      script.onload = () => {
-        createUnityInstance(canvas, config, (progress) => {
-          document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
-              }).then((unityInstance) => {
-                document.querySelector("#unity-loading-bar").style.display = "none";
-                document.querySelector("#unity-fullscreen-button").onclick = () => {
-                  unityInstance.SetFullscreen(1);
-                };
+        const chunks = await Promise.all(tasks);
+        const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+        const merged = new Uint8Array(total);
+        let offset = 0;
+        for (const c of chunks) {
+          merged.set(c, offset);
+          offset += c.byteLength;
+        }
+        return merged;
+      }
 
-              }).catch((message) => {
-                alert(message);
-              });
-            };
+      loadingBar.style.display = "block";
 
-      document.body.appendChild(script);
+      (async () => {
+        try {
+          const brotliModule = await import("https://cdn.jsdelivr.net/npm/brotli-wasm@3.0.1/index.web.js");
+          const brotli = typeof brotliModule.default?.then === "function"
+            ? await brotliModule.default
+            : (brotliModule.default || brotliModule);
 
+          // 1. Download & Decompress Data (Parts 1-7) in parallel
+          const mergedDataBr = await mergeDataParts(BUILD_URL + "FNASH2.data.br", 7);
+          statusText.textContent = "Decompressing game data...";
+          const decompressedData = brotli.decompress(mergedDataBr);
+          const dataUrl = URL.createObjectURL(new Blob([decompressedData], { type: "application/octet-stream" }));
+          progressBarFull.style.width = "50%";
+
+          // 2. Download & Decompress Framework
+          statusText.textContent = "Loading framework script...";
+          const frameworkBr = await fetchBuffer(BUILD_URL + "FNASH2.framework.js.br");
+          const decompressedFramework = brotli.decompress(frameworkBr);
+          const frameworkCode = new TextDecoder().decode(decompressedFramework);
+          const frameworkUrl = URL.createObjectURL(new Blob([frameworkCode], { type: "application/javascript" }));
+          progressBarFull.style.width = "55%";
+
+          // 3. Download & Decompress WASM
+          statusText.textContent = "Loading WASM binary...";
+          const wasmBr = await fetchBuffer(BUILD_URL + "FNASH2.wasm.br");
+          const decompressedWasm = brotli.decompress(wasmBr);
+          const codeUrl = URL.createObjectURL(new Blob([decompressedWasm], { type: "application/wasm" }));
+          progressBarFull.style.width = "60%";
+
+          statusText.textContent = "Starting engine...";
+
+          const config = {
+            arguments: [],
+            dataUrl: dataUrl,
+            frameworkUrl: frameworkUrl,
+            codeUrl: codeUrl,
+            streamingAssetsUrl: BASE_URL + "/StreamingAssets",
+            companyName: "RenderPi",
+            productName: "Five Nights At Shreks Hotel 2 (Official)",
+            productVersion: "2.0",
+            showBanner: unityShowBanner,
+          };
+
+          const script = document.createElement("script");
+          script.src = BUILD_URL + "FNASH2.loader.js";
+          script.onload = () => {
+            createUnityInstance(canvas, config, (progress) => {
+              progressBarFull.style.width = (60 + (40 * progress)) + "%";
+              statusText.textContent = `Compiling shaders and assets: ${Math.round(progress * 100)}%`;
+            }).then((unityInstance) => {
+              URL.revokeObjectURL(dataUrl);
+              URL.revokeObjectURL(frameworkUrl);
+              URL.revokeObjectURL(codeUrl);
+              loadingBar.style.display = "none";
+              document.querySelector("#unity-fullscreen-button").onclick = () => {
+                unityInstance.SetFullscreen(1);
+              };
+            }).catch((message) => {
+              console.error(message);
+              statusText.textContent = "Engine crashed during boot.";
+            });
+          };
+
+          document.body.appendChild(script);
+        } catch (err) {
+          console.error("Asset extraction failed:", err);
+          statusText.textContent = "Failed downloading or decompressing build assets.";
+        }
+      })();
     </script>
   </body>
 </html>
